@@ -111,7 +111,7 @@ def hill(x, y, max_iter=5e4,
         max_fun=5e4, disp=False, ko=False):
     if ko is False:
         ko = _get_hill_ko(x, y)
-    return fmin(_sse, ko, args=(x, y, hill_function, response_type))
+    return fmin(_sse, ko, args=(x, y, hill_function))
 
 def _get_hill_ko(x, y):
     return [y.max() - y.min(), np.mean(x), 1. , y.min()]
