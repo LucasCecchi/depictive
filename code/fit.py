@@ -30,6 +30,13 @@ def logistic(reference_samples, target,
         print 'did not converge'
     return out[0]
 
+
+# ===============================================================
+# Initial parameter guess
+# ===============================================================
+def get_targets(x, prevalence):
+    return np.array([prevalence, prevalence * np.mean(x)])
+
 # ===============================================================
 # Initial parameter guess
 # ===============================================================
@@ -94,3 +101,40 @@ def _chi(k, ref_samples, targets):
         print 'Targets are in an unrecognized data type.  Data are transformed to numpy array.'
         epsilon = 1 - t/np.array(targets)
     return np.sum(epsilon**2)
+
+
+# ===============================================================
+# Fit Hill Function
+# ===============================================================
+
+def hill(x, y, max_iter=5e4,
+        max_fun=5e4, disp=False, ko=False):
+    if ko is False:
+        ko = _get_hill_ko(x, y)
+    return fmin(_sse, ko, args=(x, y, hill_function, response_type))
+
+def _get_hill_ko(x, y):
+    return [y.max() - y.min(), np.mean(x), 1. , y.min()]
+
+def hill_function(k, x):
+    return k[0] / (1 + (x/k[1])**k[2]) + k[3]
+
+def _sse(k, x, y, f):
+    return np.sum((y - f(k, x))**2)
+
+# ===============================================================
+# Fit Line
+# ===============================================================
+
+def line(x, y):
+    nans = x + y
+    if nans[~np.isnan(nans)].size < 2:
+        print x
+        print y
+    c = np.cov(x[~np.isnan(nans)], y[~np.isnan(nans)])
+    slope = c[0, 1] / c[0, 0]
+    yint = np.mean(y) - slope * np.mean(x)
+    return [slope, yint]
+
+def line_function(k, x):
+    return k[0] * x + k[1]
