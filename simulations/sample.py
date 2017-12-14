@@ -15,20 +15,6 @@ def labels(s, k, x):
     y[U > 0] = 0
     return y
 
-# ==========================================
-# ==========================================
-#
-# ==========================================
-# ==========================================
-
-def csample(s, k, N, idx):
-    x = np.vstack([np.random.randn(N) for w in range(k.size)])
-    x = x.transpose()
-    x[:, idx] = 0.
-    # ka
-    y = sample_label(s, k, x)
-    return [x, y]
-
 
 # ==========================================
 # ==========================================
@@ -60,8 +46,9 @@ def data(k, Ncells=1000, n_doses=13, variances=None):
 # ==========================================
 
 def get_s_opt(k, variances, n_doses):
-    v = get_hill_coef(k, variances)
-    return np.linspace(-11*v, 11*v, n_doses)
+    n = get_hill_coef(k, variances)
+    return np.linspace(np.log(1/0.99 - 1)/n,
+                np.log(1e2 - 1)/n, n_doses)
 
 # ==========================================
 # ==========================================
