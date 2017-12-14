@@ -1,6 +1,8 @@
 
 import numpy as np
 from scipy.optimize import fmin
+from scipy.integrate import trapz
+from scipy.stats import gaussian_kde as kde
 
 # ===============================================================
 # ===============================================================
@@ -35,14 +37,43 @@ class logistic:
     def model(self, x):
         return logistic_function(self.pars, x)
 
+    def set_pars(self, pars):
+        self.pars = pars
+
     def get_pars(self):
         return self.pars
+
+    def compute_l1_sim(self, reference_samples, target_samples, prevalence):
+        xplot = np.linspace(np.min([reference_samples.min(),
+                                target_samples.min()]),
+                            np.max([reference_samples.max(),
+                                target_samples.max()]),
+                            250)
+        kernel = kde(reference_samples)
+        Px = kernel(xplot)
+        kernel = kde(target_samples)
+        Px1 = kernel(xplot)
+        Q = Px * self.model(xplot) / prevalence
+        self.l1_sim = 1 - trapz(np.abs(Px1 - Q), xplot)
 
     def get_critical_r(self):
         return self.pars[0] / self.pars[1]
 
-    def l1(self, reference_data, target_data):
-        return 'the'
+# ===============================================================
+# Logistic function
+# ===============================================================
+
+def logistic_function(k, x):
+    '''
+    Logistic model
+    Input:
+    k : python tuple, list, or numpy array of model parameters, i.e. [inverse temperature, chemical potential]
+    x : scalar or numpy array of values of feature x
+
+    Return:
+    numpy array of P(c=1|x)
+    '''
+    return (1 + np.exp(k[0] - k[1]*x))**-1
 
 # ===============================================================
 # Fit the supervised logistic model to data
@@ -57,9 +88,13 @@ def supervised_logistic(samples, y, ko=None):
         print 'did not converge'
     return out[0]
 
+# =========================================
+# =========================================
 def _get_supervised_init_pars(samples, y):
     return 'the'
 
+# =========================================
+# =========================================
 def _supervised_cost(k, samples, y):
     return np.sum((y - logistic_function(k, x)) * (1-k[1]))
 
@@ -97,49 +132,8 @@ def semi_supervised_logistic(reference_samples, target,
     if out[4] != 0:
         print 'did not converge'
     return out[0]
-
-
-# ===============================================================
-# Initial parameter guess
-# ===============================================================
-
-def _get_initial_parameters(ref_mu, t):
-    '''
-    Initial guess of parameters values.  Assumes that the chemical potential is between the mean of P(x|c=1) and P(x|c=0), and the inverse temperature is 2/Delta.  Where Delta is <x|1> - <x|0>.
-
-    Input:
-    ref_mu : the mean of the reference distribution
-    t : model targets, i.e. [inverse temperature, chemical potential]
-
-    Returns
-    numpy array of initial model parameters
-    '''
-    q1 = t[1] / t[0]
-    qo = (ref_mu - t[1]) / (1-t[0])
-    dq = q1 - qo
-    #return np.hstack([np.mean(2./dq), q1 - 0.5*dq])
-    k = [np.mean(2./dq), q1 - 0.5*dq]
-    return np.array([k[0]*k[1], k[0]])
-
-# ===============================================================
-# Logistic function
-# ===============================================================
-
-def logistic_function(k, x):
-    '''
-    Logistic model
-    Input:
-    k : python tuple, list, or numpy array of model parameters, i.e. [inverse temperature, chemical potential]
-    x : scalar or numpy array of values of feature x
-
-    Return:
-    numpy array of P(c=1|x)
-    '''
-    return (1 + np.exp(k[0] - k[1]*x))**-1
-
-# ===============================================================
-# Objective function
-# ===============================================================
+# =========================================
+# =========================================
 
 def _chi(k, ref_samples, targets):
     '''
@@ -165,6 +159,75 @@ def _chi(k, ref_samples, targets):
     return np.sum(epsilon**2)
 
 # ===============================================================
+# fit constrained semi_supervised logistic
+# ===============================================================
+
+def semi_supervised_constrained_logistic(reference_samples, targets, ko,
+        max_iter=5e4, max_fun=5e4, disp=False):
+    '''
+    Fit the constrained logistic model to data.  The logistic model used here is functionally identical to 1 - Fermi-Dirac statistics.  For simplicity the parameters are referred to by their physical interpretation, i.e. chemical potential and inverse temperature.
+
+    Input:
+        reference_samples : numpy array of single cell measurements representing the distribution P(x)
+        target : numpy array representing
+            [prevalance, prevalence * <x|class label =1>]
+    note that <x|c=1> = \int_{\forall x} x P(x|c=-1) dx.
+
+    Returns:
+        numpy array = [inverse temperature, chemical potential]
+    '''
+    out = fmin(_chi_constrained, ko, args=(reference_samples, targets),
+                maxiter=max_iter, maxfun=max_fun,
+                disp=disp, full_output=True)
+    if out[4] != 0:
+        print 'did not converge'
+    return out[0]
+
+# =========================================
+# =========================================
+
+def _chi_constrained(k, ref_samples, targets):
+    '''
+
+    '''
+    # evaluate model for all cells in the reference distribution
+    # The model inferred targets
+    t = np.zeros(shape=(targets.shape))
+    for w in range(1, len(k)):
+        fd = logistic_function([k[w], k[0]], ref_samples)
+        t[w-1, 0] = np.mean(fd)
+        t[w-1, 1] = np.mean(fd * ref_samples)
+    try:
+        epsilon = 1 - t/targets
+    except TypeError:
+        print 'Targets are in an unrecognized data type.  Data are transformed to numpy array.'
+        epsilon = 1 - t/np.array(targets)
+    return np.sum(epsilon**2)
+
+# ===============================================================
+# Initial parameter guess
+# ===============================================================
+
+def _get_initial_parameters(ref_mu, t):
+    '''
+    Initial guess of parameters values.  Assumes that the chemical potential is between the mean of P(x|c=1) and P(x|c=0), and the inverse temperature is 2/Delta.  Where Delta is <x|1> - <x|0>.
+
+    Input:
+    ref_mu : the mean of the reference distribution
+    t : model targets, i.e. [inverse temperature, chemical potential]
+
+    Returns
+    numpy array of initial model parameters
+    '''
+    q1 = t[1] / t[0]
+    qo = (ref_mu - t[1]) / (1-t[0])
+    dq = q1 - qo
+    #return np.hstack([np.mean(2./dq), q1 - 0.5*dq])
+    k = [np.mean(2./dq), q1 - 0.5*dq]
+    return np.array([k[0]*k[1], k[0]])
+
+
+# ===============================================================
 # ===============================================================
 # Depictive
 # ===============================================================
@@ -176,21 +239,47 @@ class depictive:
             ko=None, thresh=[0.1, 0.9]):
         self.h = hill_class
         self.thresh = thresh
-        self._organize_data(target_samples, s, prevalences,
+        self._organize_and_fit_data(target_samples, s, prevalences,
                 reference_samples, y, ko)
         self._infer_n()
         self._infer_k()
 
-    def _organize_data(self, target_samples, s, prevalences,
-                reference_samples, y, ko):
+    def _organize_and_fit_data(self, target_samples, s,
+                prevalences, reference_samples, y, ko):
+        # initial inference, fitting each logistic model separately
         self.l = []
+        targets = []
         for w in range(s.size):
+            # compute the response to dose
             tmp = self.h.standardized_model(s[w])
+            # if response is not sufficiently large do not fit model.
             if (tmp <= self.thresh[1]) & (tmp >= self.thresh[0]):
+                targets += [get_targets(target_samples[w], prevalences[w])]
                 self.l += [logistic(target_samples[w], s[w],
                                 prevalence=prevalences[w],
                                 reference_samples=reference_samples,
                                 y=y, ko=ko)]
+        # convert targets to numpy array
+        targets = np.array(targets)
+        # perform constrained optimization and apply to logistic class instances
+        self._fit(reference_samples, targets)
+        count = 0
+        for w in range(s.size):
+            # compute the response to dose
+            tmp = self.h.standardized_model(s[w])
+            # if response is not sufficiently large do not fit model.
+            if (tmp <= self.thresh[1]) & (tmp >= self.thresh[0]):
+                self.l[count].compute_l1_sim(reference_samples,
+                            target_samples[w], prevalences[w])
+                count += 1
+
+    def _fit(self, reference_samples, targets):
+        all_parameters = self.get('pars')
+        ko = np.hstack([np.mean(all_parameters[:, 1]), all_parameters[:, 0]])
+        pars = semi_supervised_constrained_logistic(reference_samples,
+                    targets, ko)
+        for w in range(len(self.l)):
+            self.l[w].set_pars(np.array([pars[w+1], pars[0]]))
 
     def get(self, attribute, args=None):
         if args is None:
@@ -238,17 +327,28 @@ class hill:
     def standardized_model(self, x):
         return hill_function([1., self.pars[1], self.pars[2], 0.], x)
 
+# =========================================
+# =========================================
+
 def _get_hill_ko(x, y):
     return [y.max() - y.min(), np.mean(x), 1. , y.min()]
 
+# =========================================
+# =========================================
+
 def hill_function(k, x):
     return k[0] / (1 + (x/k[1])**k[2]) + k[3]
+
+# =========================================
+# =========================================
 
 def _sse(k, x, y, f):
     return np.sum((y - f(k, x))**2)
 
 # ===============================================================
+# ===============================================================
 # Fit Line
+# ===============================================================
 # ===============================================================
 
 class line:
@@ -267,6 +367,9 @@ class line:
     def _compute_rsq(self, x, y):
         errors = np.mean((y - self.model(x))**2)
         self.rsq = 1 - errors / np.var(y)
+
+# =========================================
+# =========================================
 
 def line_function(k, x):
     return k * x
