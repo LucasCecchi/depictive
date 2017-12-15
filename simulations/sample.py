@@ -57,4 +57,4 @@ def get_s_opt(k, variances, n_doses):
 # ==========================================
 
 def get_hill_coef(k, variances):
-    return np.pi**2./np.sum(3 * k**2*variances)
+    return np.pi/np.sqrt(np.sum(3 * k**2*variances))

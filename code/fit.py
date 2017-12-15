@@ -16,7 +16,7 @@ class logistic:
         # store dose of stimulant
         self.s = s
         #self.targets = get_targets(reference_samples, target_samples)
-        self._get_model(reference_samples, y)
+        self._get_learning_type(reference_samples, y)
         # fit either the supervised or semi-supervised model
         if self.learning_type == 'supervised':
             self.pars = supervised_fit(target_samples, y, ko=ko)
@@ -25,7 +25,7 @@ class logistic:
             self.pars = semi_supervised_logistic(reference_samples,
                 self.targets)
 
-    def _get_model(self, reference_samples, y):
+    def _get_learning_type(self, reference_samples, y):
         if (y is None) & (reference_samples is None):
             self.learning_type = None
             print 'Not enough information, need to provide reference samples or single cell class labels.'
@@ -43,7 +43,8 @@ class logistic:
     def get_pars(self):
         return self.pars
 
-    def compute_l1_sim(self, reference_samples, target_samples, prevalence):
+    def compute_l1_sim(self, reference_samples,
+        target_samples, prevalence):
         xplot = np.linspace(np.min([reference_samples.min(),
                                 target_samples.min()]),
                             np.max([reference_samples.max(),
@@ -224,7 +225,10 @@ def _get_initial_parameters(ref_mu, t):
     dq = q1 - qo
     #return np.hstack([np.mean(2./dq), q1 - 0.5*dq])
     k = [np.mean(2./dq), q1 - 0.5*dq]
+    if dq < 0:
+        print dq
     return np.array([k[0]*k[1], k[0]])
+
 
 
 # ===============================================================
@@ -250,7 +254,7 @@ class depictive:
         self.l = []
         targets = []
         for w in range(s.size):
-            # compute the response to dose
+            # compute the response to the dose
             tmp = self.h.standardized_model(s[w])
             # if response is not sufficiently large do not fit model.
             if (tmp <= self.thresh[1]) & (tmp >= self.thresh[0]):
@@ -263,19 +267,17 @@ class depictive:
         targets = np.array(targets)
         # perform constrained optimization and apply to logistic class instances
         self._fit(reference_samples, targets)
-        count = 0
-        for w in range(s.size):
-            # compute the response to dose
-            tmp = self.h.standardized_model(s[w])
-            # if response is not sufficiently large do not fit model.
-            if (tmp <= self.thresh[1]) & (tmp >= self.thresh[0]):
-                self.l[count].compute_l1_sim(reference_samples,
-                            target_samples[w], prevalences[w])
-                count += 1
+        #
+        for w in range(len(self.l)):
+            idx = np.where(s == self.l[w].s)[0][0]
+            self.l[w].compute_l1_sim(reference_samples,
+                    target_samples[idx],
+                    prevalences[idx])
 
     def _fit(self, reference_samples, targets):
         all_parameters = self.get('pars')
-        ko = np.hstack([np.mean(all_parameters[:, 1]), all_parameters[:, 0]])
+        ko = np.hstack([np.mean(all_parameters[:, 1]),
+                        all_parameters[:, 0]])
         pars = semi_supervised_constrained_logistic(reference_samples,
                     targets, ko)
         for w in range(len(self.l)):
@@ -343,7 +345,10 @@ def hill_function(k, x):
 # =========================================
 
 def _sse(k, x, y, f):
-    return np.sum((y - f(k, x))**2)
+    penalty = 0
+    if k[0] + k[-1] > 1:
+        penalty =1e4
+    return np.sum((y - f(k, x))**2) + penalty
 
 # ===============================================================
 # ===============================================================

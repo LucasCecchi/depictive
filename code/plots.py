@@ -154,11 +154,14 @@ def ic(dclass, sname=None, xlabel=None):
 # =======================================================
 
 def l1_sims(depict, labels=None, xlabel=None, sname=None, cmap='tab20'):
-    coluer = get_coluer(len(depict), cmap=cmap)
     if type(depict) != list:
         depict = [depict]
+
     if labels is None:
         labels = [None for w in range(len(depict))]
+
+    coluer = get_coluer(len(depict), cmap=cmap)
+
     fig = plt.figure(figsize=(4.5, 4))
     count = 0
     for wdepict in depict:
